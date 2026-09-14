@@ -26,6 +26,21 @@ python -m unittest discover -s tests -v
 
 `data/train.csv` and `data/test.csv` are **small synthetic examples written only to exercise the pipeline**. Their labels and measured metrics are not a claim about real Linux attacks or deployment accuracy. Replace them with independently collected traces to evaluate a real system. Training creates `models/anomaly_model.pkl`; this generated artifact is ignored by Git, so retrain after a fresh clone.
 
+## Public-dataset evaluation
+
+The project has also been evaluated on [ADFA-LD](https://research.unsw.edu.au/projects/adfa-ids-datasets), a Linux syscall-trace benchmark. The official download endpoint was unavailable during this evaluation, so the archive came from a [public mirror](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset). Its split counts match [published counts](https://www.mdpi.com/2076-3417/9/1/178) of 833 normal training, 4,372 normal validation, and 746 attack files, but no official checksum was available to verify byte-for-byte identity. See [the benchmark report](reports/adfa_ld_evaluation.md) for the exact counts, method, and results.
+
+To reproduce the conversion and run locally:
+
+```bash
+git clone --depth 1 https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset.git /tmp/adfa-ld-source
+python scripts/prepare_adfa_ld.py --archive /tmp/adfa-ld-source/ADFA-LD.zip
+python main.py train --data data/adfa_ld/train.csv --model models/adfa_ld_model.pkl
+python main.py evaluate --data data/adfa_ld/test.csv --model models/adfa_ld_model.pkl
+```
+
+The converter retains the dataset's syscall numbers as names such as `syscall_45`; it does **not** guess Linux syscall names from an unverified mapping. It removes duplicate traces, training/test overlap, and traces with conflicting normal/attack labels. Generated data and model files stay out of Git. Because these placeholders are not real names, the file/network/process/permission category features are zero in this evaluation.
+
 The CLI also accepts `--model path/to/model.pkl` on all commands. `predict` and `evaluate` accept `--threshold 0.55` to override the saved cutoff. `predict --json` prints a machine-readable object. Training accepts `--window-size 10` (minimum 2).
 
 ## Input contract
