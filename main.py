@@ -6,6 +6,7 @@ import sys
 
 from src.evaluate import evaluate_model
 from src.predict import load_model, predict_trace
+from src.supervised import DEFAULT_SUPERVISED_MODEL_PATH, train_supervised_model
 from src.train import DEFAULT_MODEL_PATH, train_model
 
 
@@ -17,6 +18,12 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--data", required=True, help="Training CSV or text file")
     train.add_argument("--model", default=str(DEFAULT_MODEL_PATH), help="Output model path")
     train.add_argument("--window-size", type=int, default=10, help="Syscalls per window (default: 10)")
+
+    supervised = commands.add_parser("train-supervised", help="Fit a known-attack classifier with a reserved holdout")
+    supervised.add_argument("--normal-data", required=True, help="Normal-only training CSV")
+    supervised.add_argument("--data", required=True, help="Labelled normal/attack CSV to split")
+    supervised.add_argument("--model", default=str(DEFAULT_SUPERVISED_MODEL_PATH), help="Output model path")
+    supervised.add_argument("--holdout-output", required=True, help="Write untouched test rows here")
 
     predict = commands.add_parser("predict", help="Score one cleaned trace")
     predict.add_argument("--trace", required=True, help="Whitespace- or comma-separated syscall names")
@@ -43,6 +50,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Training windows: {result['training_windows']}")
             print(f"Ignored anomalous traces: {result['ignored_anomalous_traces']}")
             print(f"Calibrated threshold: {result['threshold']:.4f}")
+        elif args.command == "train-supervised":
+            result = train_supervised_model(args.normal_data, args.data, args.model,
+                                            holdout_path=args.holdout_output)
+            print("System Call Anomaly Detector — supervised known-attack model\n")
+            print(f"Model saved: {result['model_path']}")
+            print(f"Reserved holdout: {result['holdout_path']}")
+            print(f"Fit traces (normal, anomalous): {result['normal_fit']}, {result['anomalous_fit']}")
+            print(f"Validation traces (normal, anomalous): {result['normal_validation']}, {result['anomalous_validation']}")
+            print(f"Holdout traces (normal, anomalous): {result['normal_holdout']}, {result['anomalous_holdout']}")
+            print(f"Validation F1: {result['validation_f1']:.4f}")
+            print(f"Validation-selected threshold: {result['threshold']:.4f}")
         elif args.command == "predict":
             result = predict_trace(args.trace, load_model(args.model), threshold=args.threshold)
             if args.json:

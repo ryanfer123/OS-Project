@@ -1,6 +1,6 @@
 # AI-Based System Call Anomaly Detector
 
-This is the **AI half** of a third-year Operating Systems project. It accepts cleaned Linux syscall names, learns from normal traces with an Isolation Forest, and returns one anomaly result per trace. The monitoring teammate owns `strace`/collection and basic extraction; this module begins after those steps.
+This is the **AI half** of a third-year Operating Systems project. It accepts cleaned Linux syscall names and returns one anomaly result per trace. The normal-only Isolation Forest remains the default baseline. An optional supervised model uses labelled examples of known attacks when those are available. The monitoring teammate owns `strace`/collection and basic extraction; this module begins after those steps.
 
 ```text
 Running process → monitoring → cleaned syscall sequence
@@ -38,6 +38,16 @@ python scripts/prepare_adfa_ld.py --archive /tmp/adfa-ld-source/ADFA-LD.zip
 python main.py train --data data/adfa_ld/train.csv --model models/adfa_ld_model.pkl
 python main.py evaluate --data data/adfa_ld/test.csv --model models/adfa_ld_model.pkl
 ```
+
+The normal-only model has limited detection quality on this benchmark. For an explicitly **known-attack** comparison that reached the requested 75% target on a reserved holdout, run:
+
+```bash
+python main.py train-supervised --normal-data data/adfa_ld/train.csv --data data/adfa_ld/test.csv --model models/adfa_ld_supervised.pkl --holdout-output data/adfa_ld/supervised_holdout.csv
+python main.py evaluate --data data/adfa_ld/supervised_holdout.csv --model models/adfa_ld_supervised.pkl
+python main.py predict --trace "syscall_1 syscall_2 syscall_3" --model models/adfa_ld_supervised.pkl --json
+```
+
+`train-supervised` first reserves half the labelled input as a holdout, then splits the other half into model-fit and threshold-validation partitions. It adds the separate normal-only training file to model fitting. It learns TF-IDF frequencies of single calls and adjacent pairs, fits class-weighted logistic regression, and chooses the cutoff for best F1 on validation labels. Its `anomaly_score` is a **0–1 model decision score, not a calibrated probability of attack**. Holdout labels are used to stratify the split and compute final metrics, never to fit features, the classifier, or the cutoff. This model recognizes patterns similar to the attack examples it saw; it is not evidence of zero-day detection. **An ADFA-trained artifact expects `syscall_n` tokens; it cannot score the teammate's named-syscall stream meaningfully without a verified ID/name conversion.** Use the normal-only model for that separate research question.
 
 The converter retains the dataset's syscall numbers as names such as `syscall_45`; it does **not** guess Linux syscall names from an unverified mapping. It removes duplicate traces, training/test overlap, and traces with conflicting normal/attack labels. Generated data and model files stay out of Git. Because these placeholders are not real names, the file/network/process/permission category features are zero in this evaluation.
 
@@ -88,7 +98,7 @@ Parse the JSON output and trigger the alert in the OS module when `status` is `A
 
 ## Evaluation and viva notes
 
-`evaluate` prints accuracy, precision, recall, F1, false-positive rate, and confusion counts. **Anomalous** is the positive class. False-positive rate is `FP / (FP + TN)`: a false positive is a genuinely normal trace flagged anomalous. Test labels are used only for metrics, never for fitting or choosing the threshold.
+`evaluate` prints accuracy, precision, recall, F1, false-positive rate, and confusion counts. **Anomalous** is the positive class. False-positive rate is `FP / (FP + TN)`: a false positive is a genuinely normal trace flagged anomalous. For the normal-only baseline, no attack labels are used in fitting or threshold calibration. For the supervised option, labelled development examples train the classifier and choose its threshold; its reserved holdout labels are used only for final metrics.
 
 - **Why Isolation Forest?** It can learn from mostly normal data, needs no attack examples to fit, trains quickly on simple numeric features, and is easier to explain than an LSTM. See the [original paper](https://doi.org/10.1109/ICDM.2008.17).
 - **What does the score mean?** It combines the forest's isolation score with small penalties for calls and adjacent pairs missing from normal training data, using the trace's most unusual window. Higher is more unusual; it is not a probability or a guarantee of malicious activity. Scikit-learn's [`score_samples` documentation](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html) explains the forest-score direction.
